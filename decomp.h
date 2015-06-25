@@ -15,6 +15,17 @@
 // 3 4 5
 
 
+static void apply_homography(double y[2], double H[3][3], double x[2])
+{
+	double X = H[0][0] * x[0] + H[0][1] * x[1] + H[0][2];
+	double Y = H[1][0] * x[0] + H[1][1] * x[1] + H[1][2];
+	double Z = H[2][0] * x[0] + H[2][1] * x[1] + H[2][2];
+	y[0] = X / Z;
+	y[1] = Y / Z;
+}
+
+
+
 void decomp(double H[9],double A[6],double H0[9],double B[6]){
 /**
   * @param
