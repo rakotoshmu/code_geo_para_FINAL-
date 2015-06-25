@@ -1,3 +1,7 @@
+
+
+gcc-5 -fopenmp -O3 viho_alt.c -lfftw3 -lX11 -ltiff -ljpeg -lpng
+
 compile with openMP
 
 On suppose pd=3
