@@ -59,7 +59,7 @@ int main(int argc,char *argv[]){
 	finreal = omp_get_wtime();
 	printf("cputime :%fs\ntime : %fs\n",(double)(fincpu-debutcpu)/CLOCKS_PER_SEC,(double)(finreal-debutreal));
 	
-	iio_save_image_float_vec("img_f.pgm",img_f,w,h,3);
+	iio_save_image_float_vec("img_f.png",img_f,WOUT,HOUT,3);
 
 
 	return 0;
