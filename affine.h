@@ -30,7 +30,7 @@
 
 #define VARIANCE 0.36 
 #define PERIOD 1.
-#define BETA 0.25
+#define BETA 0.36
 
 //Prec indique la précision des des calculs
 #define PREC 10
@@ -100,7 +100,7 @@ float filter_h(float *img,int w,int h,double xc_i,double yc_i,double xc_f,double
 
 	double y = j;
 	double wf = (double) w, hf = (double) h;
-	double M = a0*(x+xc_f-wf/2.) + a1*(y+yc_f-hf/2.) - xc_i+wf/2.;  //Indique ou on doit centrer la gaussienne
+	double M = a0*(x+xc_f-wf/2.) + a1*(y+yc_f-hf/2.) - xc_i+wf/2.;  //Indique ou on doit centrer la convolution
 	int k = floor(M);
 	int p = floor(prec*(M-k));
 	float tot = 0;
