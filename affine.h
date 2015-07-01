@@ -281,37 +281,6 @@ int apply_affinite(float *img,float *img_f,int w,int h,int w_f,int h_f,double *a
 			}
 		}
 	}
-    //*/
-    /** condition aux bords : périodisation
-	int i_sym,j_sym;
-	for(l=0;l<3;l++){
-		for(i=0;i<3*ww;i++){
-			for(j=0;j<3*hh;j++){
-                i_sym = i-ww-dwp;
-                while(i_sym<0 || i_sym>w-1){i_sym = (i_sym<0) ? i_sym+w : i_sym-w;}
-                j_sym = j-hh-dhp;
-                while(j_sym<0 || j_sym>h-1){j_sym = (j_sym<0) ? j_sym+h : j_sym-h;}
-				img1[(i+3*ww*j)*3+l]=img_i[(i_sym+j_sym*w)*3+l];
-			}
-		}
-	}
-    //*/
-	/** condition aux bords : tronquature
-	float tot[3] = {0,0,0};
-	for(l=0;l<3;l++){
-		for(i=0;i<w*h;i++){tot[l] += img_i[3*i+l];}
-		tot[l] = tot[l]/(ww*hh);
-		for(i=0;i<9*ww*hh;i++){
-            //img1[3*i+l]=tot[l]; //si on veut mettre la moyenne
-            img1[3*i+l]=0; //si on veut mettre du noir
-        }
-		for(i=0;i<w;i++){
-			for(j=0;j<h;j++){
-				img1[(i+ww+dwp+3*ww*(j+hh+dhp))*3+l]=img_i[(i+j*w)*3+l];
-			}
-		}
-	}
-	//*/
 
 
 	//Calcul de valeurs auxiliaire pour la decomposition en shear (cf. Szeliski, on a garde les noms de l'article)
