@@ -5,16 +5,16 @@
 #include "homo_box.h"
 #include <omp.h>
 
-//Pour les homographie
+//for the homographies
 // 0 1 2
 // 3 4 5
 // 6 7 8
 
-//Pour les affinité
+//for the affinities
 // 0 1 2
 // 3 4 5
 
-
+//y = H(x)
 static void apply_homography(double y[2], double H[3][3], double x[2])
 {
 	double X = H[0][0] * x[0] + H[0][1] * x[1] + H[0][2];
@@ -25,19 +25,19 @@ static void apply_homography(double y[2], double H[3][3], double x[2])
 }
 
 
-
+// H = A H0 B
 void decomp(double H[9],double A[6],double H0[9],double B[6]){
 /**
   * @param
-  *     H,A,H0,B : H = A H0 B
+  *     H an input homography
+  *		H0 an output homography
+  *		A,B output affinities 
   */
     double a=H[0], b=H[1], p=H[2], c=H[3], d=H[4], q=H[5], r=H[6], s=H[7], t=H[8];
     double t0, t1;
-	//on suppose r,s != 0,0
+	//assume r,s != 0,0
 
-
-
-    //il existe une infinité de couples (t0,t1) viables. On en choisit un simple
+    //an infinity of (t0,t1) are possible. here is a simple one
     if(fabs(a*s-b*r)<fabs(c*s-d*r)){
         t0 = 0.;
         t1 = -((a*s-b*r)*(a*r+b*s)+(c*s-d*r)*(c*r+d*s))/(pow(r,2.)+pow(s,2.))/(c*s-d*r);
@@ -48,7 +48,7 @@ void decomp(double H[9],double A[6],double H0[9],double B[6]){
 
 
 
-    //on change les notations : on translate les coefficients (H devient T_(t0,t1)*H)
+    //translation of (t0,t1) (H becomes T_(t0,t1)*H)
     a += t0*r;
     b += t0*s;
     p += t0*t;
@@ -86,37 +86,40 @@ void decomp(double H[9],double A[6],double H0[9],double B[6]){
 
 }
 
+
 void apply_homo_final(float *img,float *img_f,int w,int h,int w_f,int h_f,double H[3][3]){
 
 /**
   * @param
-  *     img : image d'entrée
-  *     img_f : image de sortie
-  *     w,h : dimension de l'image d'entrée
-  *     H : matrice de l'homographie img_f(x,y)=img(H(x,y))
+  *     img : input image
+  *     img_f : output image
+  *     w,h : width and heights of the input image
+  *		w_f,h_f : width and heights of the output image
+  *     H : inverse homohraphy img_f(x,y)=img(H(x,y))
   */
 
 
 	double *a = *H;
 
-	if(a[6]==0 && a[7]==0){ //cas d'une affinité
+	if(a[6]==0 && a[7]==0){ 	//in this case H is an affinity
         for(int i=0;i<8;i++){a[i]=a[i]/a[8];}
         a[8]=1.;
 		double A[6];
 		for(int i=0;i<6;i++){A[i]=a[i];}
-		apply_affinite(img,img_f,w,h,w_f,h_f,A);
+		apply_affinity(img,img_f,w,h,w_f,h_f,A);
 	}
-	else{
+	else{	//here it is an homography
 		double A[6];
 		double H0[9];
 		double B[6];
 
-		decomp(a,A,H0,B);
+		decomp(a,A,H0,B);	//compute the decomposition H = A H0 B	
 
 
 
-	double x4[4] = {0,w_f,w_f,0};
+		double x4[4] = {0,w_f,w_f,0};
         double y4[4] = {0,0,h_f,h_f};
+
         //x1,y1 = H(x4,y4)
         double x1[4];
         double y1[4];
@@ -165,7 +168,7 @@ void apply_homo_final(float *img,float *img_f,int w,int h,int w_f,int h_f,double
         int max_y2 = ceil(temp_max_y2);
         int w2 = max_x2-min_x2, h2 = max_y2-min_y2, mu2 = min_x2, nu2 = min_y2;
 
-        //augmenter w2, h2 pour avoir même parité que w1, h1
+        //increase w2, h2 to have the same parity as w1, h1
         if((w2-w1)%2!=0){w2++;}
         if((h2-h1)%2!=0){h2++;}
 
@@ -193,7 +196,7 @@ void apply_homo_final(float *img,float *img_f,int w,int h,int w_f,int h_f,double
         int max_y3 = ceil(temp_max_y3);
         int w3 = max_x3-min_x3, h3 = max_y3-min_y3, mu3 = min_x3, nu3 = min_y3;
  
-        //augmenter w3, h3 pour avoir même parité que w_f, h_f
+ 		//increase w3, h3 to have the same parity as w_f, h_f
         if((w3-w_f)%2!=0){w3++;}
         if((h3-h_f)%2!=0){h3++;}
 
@@ -213,7 +216,8 @@ void apply_homo_final(float *img,float *img_f,int w,int h,int w_f,int h_f,double
 
 
 
-        ///** code original (application de la décomposition)
+        ///Application of the decomposition
+        
         float *img1 = malloc(3*w1*h1*sizeof(float));
 		for(int i=0;i<3*w1*h1;i++){img1[i]=img[i];}
 
@@ -234,12 +238,12 @@ void apply_homo_final(float *img,float *img_f,int w,int h,int w_f,int h_f,double
                 for(int l=0;l<3;l++)
                     {img_f[(i+w_f*j)*3+l]=img4[(i+w4*j)*3+l];}
         free(img4);
-        //*/
 	}
 	
 	
 	double p[2];
 	
+	//truncate the output image, because it has been symmetrized to prevent ringing
 	for(int i=0;i<w_f;i++){
 		for(int j=0;j<h_f;j++){
 			p[0]=i; p[1]=j;
