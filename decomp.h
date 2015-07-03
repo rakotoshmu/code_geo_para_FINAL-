@@ -248,8 +248,3 @@ void apply_homo_final(float *img,float *img_f,int w,int h,int w_f,int h_f,double
 	}
 
 }
-
-
-
-
-
