@@ -3,173 +3,176 @@
 #include <math.h>
 #include <omp.h>
 
-//Ce programme homobow utilise l'image 4-int (modifiée) pour interpoler l'image par une fonction affine par morceaux (interp par spline d'orde 1)
-//et pour calculer la convoléde cette fonction par le filtre g3 (trois porte de largeur d convolées entre elles)
-//Le programme fonctionne une erreur de typage à été corrigé par rapport aux versions précédentes 
-
-float absf(float a){if(a>0){return a;}else{return -a;}}
-
-void build_quatre_int(float *img,double *Img,int wh){
 /**
-  * @param
-  *     img : colonne/ligne à intégrer pour une couleur fixée
-  *     wh : taille de img
-  *     Img : colonne/ligne contenant les image 1-int 2-int 3-int 4-int de img aux point 0...wh (lorsque img est interpoler par une fonction constante par morceaux
-  */
-Img[0] = 0; // on initialise les valeurs des image 1-int 2-int 3-int 4-int à 0 en 0
-Img[wh+1] = 0;
-Img[2*wh+2] = 0;
-Img[3*wh+3] = 0;
-
-int u;
-double q,l;
-for(u=1;u<wh+1;u++){
-    q = (double) img[u-1];
-    Img[u] = Img[u-1] +  q;                //première intégrale 0...wh
-    Img[u+wh+1] = Img[u+wh] + Img[u-1] + q/2;      //seconde intégrale  wh+1...2*wh+1
-    Img[u+2*wh+2] = Img[u+2*wh+1] + Img[wh+u] + Img[u-1]/2 + q/6;//troisième intégrale 2*wh+2...3*wh+2
-    Img[u+3*wh+3] = Img[u+3*wh+2] + Img[2*wh+1+u] + Img[wh+u]/2 + Img[u-1]/6 + q/24;//quatrième intégrale 3*wh+3...4*wh+3
-}
-}
-
-
-double eval_quatre_int(float *img,double *Img,double xy,int wh){
-/**
-  * @param
-  *     img : colonne/ligne à intégrer pour une couleur fixée
-  *     wh : taille de img
-  *     Img : colonne/ligne contenant les image 1-int 2-int 3-int 4-int de img aux point 0...wh (lorsque img est interpoler par une fonction constante par morceaux
-  *     xy : point où évaluer Img
-  *     xys : partie entière de xy
+  * the program homo_box use the fourth integral image to interpol an image by a piecewise affine function
+  * and to convolve this function with the filter g3 (convolution of 3 boxes of width D)
   */
 
-    double s,r,Q;
-
-    if(xy>=wh){
-    // on calcule le polynome de degrès 3 si on sort de l'img par au dessus
-       r = (double) (xy-wh);
-       s =  Img[4*wh+3] + r*(Img[3*wh+2] + r*(Img[2*wh+1]/2 + r * Img[wh]/6));
-    }
-    else if(xy<0){
-    // zeros si on sort par en dessous
-       s = 0;
-    }
-    else{
-    // On calcule F4(xys) + polynome d'interp entre xys et xys+1 si (0<=xys<wh)
-
-      int xys = floor(xy);
-      r = (double) (xy-xys);
-      Q = (double) img[xys];
-
-      s = Img[3*wh+3+xys] + r*(Img[2*wh+2+xys] + r * (Img[wh+1+xys]/2 + r *(Img[xys]/6 + r*Q/24)));
-    }
-    return s;
-}
-
-float convol_img(float *img,double *Img,double xy,float d,int wh){
-//Ce programme permet de calculer en xy grâce à la 4_int la convolé par g3 de img interpolée initialement par une fonctions affines par morceaux
-//l'écart type de g3 est défini en fonction de d
+//build the integral images
+void build_fourth_int(float *img,double *Img,int wh){
 /**
   * @param
-  *     img : colonne/ligne à intégrer pour une couleur fixée
-  *     wh : taille de img
-  *     Img : colonne/ligne contenant les image 1-int 2-int 3-int 4-int de img aux point 0...wh (lorsque img est interpoler par une fonction constante par morceaux
-  *     xy : point où évaluer Img
-  *     d : distance de zoom
-  *     D :  taille des fonctions porte utilisées pour la convolution
-  *     xys : partie entière de xy
+  *     img : row/column to integrate (1 level of color)
+  *     wh : size of img
+  *     Img : output row/column
+  *         will contain 1-, 2-, 3- and 4-integral of img on points 0..wh
+  *         suppose img is piecewise constant
   */
+    //initialize values of integral images at 0 on 0
+    Img[0] = 0;
+    Img[wh+1] = 0;
+    Img[2*wh+2] = 0;
+    Img[3*wh+3] = 0;
+
+    int u;
+    double q,l;
+    for(u=1;u<wh+1;u++){
+        q = (double) img[u-1];
+        //first integral (indexed from 0 to wh)
+        Img[u] = Img[u-1] +  q;
+        //second integral (indexed from wh+1 to 2*wh+1)
+        Img[u+wh+1] = Img[u+wh] + Img[u-1] + q/2;
+        //third integral (indexed from 2*wh+2 to 3*wh+2)
+        Img[u+2*wh+2] = Img[u+2*wh+1] + Img[wh+u] + Img[u-1]/2 + q/6;
+        //fourth integral (indexed from 3*wh+3 to 4*wh+3)
+        Img[u+3*wh+3] = Img[u+3*wh+2] + Img[2*wh+1+u] + Img[wh+u]/2 + Img[u-1]/6 + q/24;
+    }
+}
+
+//evaluate integral images
+double eval_fourth_int(float *img,double *Img,double xy,int wh){
+/**
+  * @param
+  *     img : row/column to integrate (1 level of color)
+  *     wh : size of img
+  *     Img : row/column containing 1-, 2-, 3- and 4-integral of img on points 0..wh
+  *     xy : point where to evaluate Img
+  */
+    double r,Q;
+
+    if(xy>=wh){ //compute the polynomial of degree 3 if xy exceed the size of the image
+        r = (double) (xy-wh);
+        return Img[4*wh+3] + r*(Img[3*wh+2] + r*(Img[2*wh+1]/2 + r * Img[wh]/6));
+    }
+    else if(xy<0){ //zero if xy is negative
+        return 0;
+    }
+    else{ //compute F4(floor(xy)) + polynomial of interpolation between floor(xy) and floor(xy)+1
+        int xys = floor(xy);
+        r = (double) (xy-xys);
+        Q = (double) img[xys];
+        return Img[3*wh+3+xys] + r*(Img[2*wh+2+xys] + r*(Img[wh+1+xys]/2 + r*(Img[xys]/6 + r*Q/24)));
+    }
+}
 
 
-//On limite l'écart type de la triple porte sinon il y a des problèmes numériques
-double d_aux = 0.64*pow(d,2)-0.49;
-if(d_aux<0.001){d_aux=0.001;}
-double D = 2*sqrt(d_aux);
 
-float s;
+//convolve an image with g3 (the image is considered as piecewise affine)
+float convolve_img(float *img,double *Img,double xy,float d,int wh){
+/**
+  * @param
+  *     img : row/column to integrate (1 level of color)
+  *     wh : size of img
+  *     Img : row/column containing 1-, 2-, 3- and 4-integral of img on points 0..wh
+  *     xy : point where to evaluate Img
+  *     d : zoom factor (determining standard deviation of g3)
+  *     D : size of the box functions defining g3
+  */
+    //limit standard deviation to avoid numerical problems
+        //when convolving with too small gaussian
+    double d_aux = 0.64*pow(d,2)-0.49;
+    if(d_aux<0.001){d_aux=0.001;}
+    double D = 2*sqrt(d_aux);
 
-if(D>=wh/2 && xy>=0 && xy<=wh){s = (float) Img[wh]/wh;} // moyenne de img
+    if(D>=wh/2 && xy>=0 && xy<=wh){
+        return (float) Img[wh]/wh; //mean of img
+    }else{
+        //needed points (where to evaluate fourth integral) image to compute convolution
+        double xy1,xy2,xy3,xy4,xy5,xy6,xy7,xy8;
 
-else {
+        xy1 = (double) xy + (3.*D+1.)/2.;
+        xy2 = (double) xy + (3.*D-1.)/2.;
+        xy3 = (double) xy + (D+1.)/2.;
+        xy4 = (double) xy + (D-1.)/2.;
+        xy5 = (double) xy + (1.-D)/2.;
+        xy6 = (double) xy - (1.+D)/2.;
+        xy7 = (double) xy + (1.-3.*D)/2.;
+        xy8 = (double) xy - (1.+3.*D)/2.;
 
-  // points on l'on doit évaluer l'image 4-int pour réaliser la convolution
-  double xy1,xy2,xy3,xy4,xy5,xy6,xy7,xy8;
+        // a. = valeur de l'image 4-int en .
+        // b. = valeur de la derivé discrète de l'image 4-int
+        // c. = valeur de la derivé discrète seconde de l'image 4-int
+        // d. = valeur de la derivé discrète troisième de l'image 4-int
+        // e. = valeur de la derivé discrète quatrième de l'image 4-int = valeur de la convolution
 
-  xy1 = (double) xy + (3*D+1)/2;
-  xy2 = (double) xy + (3*D-1)/2;
-  xy3 = (double) xy + (D+1)/2;
-  xy4 = (double) xy + (D-1)/2;
-  xy5 = (double) xy + (1-D)/2;
-  xy6 = (double) xy - (1+D)/2;
-  xy7 = (double) xy + (1-3*D)/2;
-  xy8 = (double) xy - (1+3*D)/2;
+        /*
+         * aX : value of 4-integral image in xyX
+         * bX : value of discrete derivative of 4-integral image
+         * cX : value of second discrete derivative of 4-integral image
+         * dX : value of third discrete derivative of 4-integral image
+         * eX : value of fourth discrete derivative of 4-integral image (returned value)
+         */
+        double a1,a2,a3,a4,a5,a6,a7,a8,b1,b2,b3,b4,c1,c2,c3,d1,d2,e1;
 
-  // a. = valeur de l'image 4-int en .
-  // b. = valeur de la derivé discrète de l'image 4-int
-  // c. = valeur de la derivé discrète seconde de l'image 4-int
-  // d. = valeur de la derivé discrète troisième de l'image 4-int
-  // e. = valeur de la derivé discrète quatrième de l'image 4-int = valeur de la convolution
+        //evaluate fourth integral
+        a1 = eval_fourth_int(img,Img,xy1,wh);
+        a2 = eval_fourth_int(img,Img,xy2,wh);
+        a3 = eval_fourth_int(img,Img,xy3,wh);
+        a4 = eval_fourth_int(img,Img,xy4,wh);
+        a5 = eval_fourth_int(img,Img,xy5,wh);
+        a6 = eval_fourth_int(img,Img,xy6,wh);
+        a7 = eval_fourth_int(img,Img,xy7,wh);
+        a8 = eval_fourth_int(img,Img,xy8,wh);
 
-  double a1,a2,a3,a4,a5,a6,a7,a8,b1,b2,b3,b4,c1,c2,c3,d1,d2,e1;
+        /*
+         * discrete derivative of size 1 (to consider a piecewise constant function as a piecewise
+         * affine function, there is an implicit convolution with box of size 1)
+         */
+        b1 = a1 - a2;
+        b2 = a3 - a4;
+        b3 = a5 - a6;
+        b4 = a7 - a8;
 
-  a1 = eval_quatre_int(img,Img,xy1,wh);
-  a2 = eval_quatre_int(img,Img,xy2,wh);
-  a3 = eval_quatre_int(img,Img,xy3,wh);
-  a4 = eval_quatre_int(img,Img,xy4,wh);
-  a5 = eval_quatre_int(img,Img,xy5,wh);
-  a6 = eval_quatre_int(img,Img,xy6,wh);
-  a7 = eval_quatre_int(img,Img,xy7,wh);
-  a8 = eval_quatre_int(img,Img,xy8,wh);
+        //discrete derivative
+        c1 = (b1 - b2)/D;
+        c2 = (b2 - b3)/D;
+        c3 = (b3 - b4)/D;
 
-  // dérivé discrète de taille 1 (la convolution est faite avec une fonction porte de taille 1)
-  //pour passer d'une interpolation constante par morceaux à linéaire par morceaux 
+        //discrete derivative
+        d1 = (c1 - c2)/D;
+        d2 = (c2 - c3)/D;
 
-  b1 = a1 - a2;
-  b2 = a3 - a4;
-  b3 = a5 - a6;
-  b4=  a7 - a8;
+        //discrete derivative
+        e1 = (d1 - d2)/D;
 
-  // dérivés pour  convoler
-
-  c1 = (b1 - b2)/D;
-  c2 = (b2 - b3)/D;
-  c3 = (b3 - b4)/D;
-
-  d1 = (c1 - c2)/D;
-  d2 = (c2 - c3)/D;
-
-  e1 = (d1 - d2)/D;
-
-  s = (float) e1;
-   }
-
-return s;
+        return (float) e1;
+    }
 }
 
 
 int apply_homo(float *img,float *img_f,int w,int h,int w_f,int h_f,int mu,int nu,int mu_f,int nu_f,double H[9]){
-/*
+/**
   * @param
-  *     img, img_f : les images d'entrÈe et de sortie
-  *     w,h, w_f,h_f : les dimensions des images
-  *     mu,nu, mu_f,nu_f : les coordonnÈes du pixel en haut a gauche des images final et initiale
-  *     H : homographie telle que b=c=s=0
-  * Un pixel ayant une epaisseur de 1, on considere que son antÈcÈdent est d'epaisseur d
-  * (d la valeur absolue de la dÈrivÈe de l'homographie en ce point)
-  * Dans le code, x et y reprÈsentent les coordonnÈes reelles, float, avec decentrage
-  * alors que i et j reprÈsentent les indexes dans le tableau, int, centrÈs en haut ‡ gauche
-  * On pourrait Èviter certains dÈcentrage (-mu, -nu) qui seront compensÈs dans linear_int,
-  * mais cela permet d'Ítre cohÈrent dans les notations
+  *     img, img_f : initial and final images
+  *     w,h, w_f,h_f : dimensions of images
+  *     mu,nu, mu_f,nu_f : position of images (in the plan)
+  *     H : homography matrix such that H[1]=H[3]=H[7]=0
+  *
+  * since a pixel has a size of 1, its inverse image has a size d, with d the absolute value of the derivative
+  * at that point
+  * in this function, x and y represent real coordinates (taking into account the position of the image)
+  * and i and j represent indexes in the image (seen as an array)
+  *
+  * Img (with uppercase) represent an integral image, while img is an image
   */
 	int l;
 
     //w_aux,h_aux, mu_aux,nu_aux pour l'image intermÈdiaire img_aux
-
-    int w_aux = w_f; //la 2nde Ètape laisse inchangÈe x, donc w_f=w_aux
-    int h_aux = h; //la 1ere Ètape laisse inchangÈe y, donc c'est noir en dehors de cette Èpaisseur
-    int mu_aux = mu_f;
-
-    int nu_aux = nu;
+    //mu_aux,nu_aux,w_aux,h_aux are the position and size of the auxiliary image
+    int w_aux = w_f; //the second step does not change x
+    int h_aux = h; //the first step does not change y
+    int mu_aux = mu_f; //the second step does not change x
+    int nu_aux = nu; //the first step does not change y
 
     float *imgw = malloc(w*sizeof(float));
 	double *Img = malloc(4*(w+1)*sizeof(double));
@@ -179,46 +182,41 @@ int apply_homo(float *img,float *img_f,int w,int h,int w_f,int h_f,int mu,int nu
     double *Img_aux = malloc(4*(h_aux+1)*sizeof(double));
     float *img_aux2 = malloc(w_f*h_f*sizeof(float));
 
-    float flmu = (float) mu, flnu_aux = (float) nu_aux;
-
 	for(l=0;l<3;l++){
-
-		//operations colonnes par colonnes :
+        //first step
 		for(int j=0;j<h_aux;j++){
-            for(int i=0;i<w;i++){imgw[i] = img[3*(i+j*w)+l];} // on extrait la colonne
-            build_quatre_int(imgw,Img,w); //on construit l'image4 int
+            for(int i=0;i<w;i++){imgw[i] = img[3*(i+j*w)+l];} //extract the column
+            build_fourth_int(imgw,Img,w);
 
 			#pragma parallel for
 			for(int i=0;i<w_aux;i++){
-
 				float x = (float) (i+mu_aux);
-                float d = absf((H[0]*H[8]-H[6]*H[2])/pow(H[6]*x+H[8],2)); //derivee selon x
+                float d = fabs((H[0]*H[8]-H[6]*H[2])/pow(H[6]*x+H[8],2)); //derivative with respect to x
 
-				x = (H[0]*x+H[2])/(H[6]*x+H[8]) - flmu;		//on applique l'homographie
-				img_aux[i+j*w_aux] = convol_img(imgw,Img,x,d,w);
+				x = (H[0]*x+H[2])/(H[6]*x+H[8]) - (float) mu; //apply the homography
+				img_aux[i+j*w_aux] = convolve_img(imgw,Img,x,d,w);
 			}
 		}
 
 
-		//opÈrations lignes par lignes, similaire a la precedente :
-		
+
+		//second step
 		for(int i=0;i<w_f;i++){
-            for(int j=0;j<h_aux;j++){img_auxh[j] = img_aux[i+j*w_aux];} //on extrait une ligne
-            build_quatre_int(img_auxh,Img_aux,h_aux); // on construit l'image 4 int
+            for(int j=0;j<h_aux;j++){img_auxh[j] = img_aux[i+j*w_aux];} //extract the line
+            build_fourth_int(img_auxh,Img_aux,h_aux);
 
 			float x =(float) (i+mu_f);
-			float d = absf(H[4]/(H[6]*x+H[8])); //dérivé selon y, qui ne dépend de y
+			float d = fabs(H[4]/(H[6]*x+H[8])); //derivative with respect to y (does not depend on y)
 
 			#pragma parallel for
 			for(int j=0;j<h_f;j++){
-
 				float y = (float) (j+nu_f);
-				y = (H[4]*y+H[5])/(H[6]*x+H[8]) - flnu_aux; //on applique l'hographie
-				img_aux2[i+j*w_f] = convol_img(img_auxh,Img_aux,y,d,h_aux);
+				y = (H[4]*y+H[5])/(H[6]*x+H[8]) - (float) nu_aux; //apply the homography
+				img_aux2[i+j*w_f] = convolve_img(img_auxh,Img_aux,y,d,h_aux);
 
 			}
 		}
-	
+
 		for(int i=0;i<w_f*h_f;i++){img_f[3*i+l]=img_aux2[i];}
 
 	}
