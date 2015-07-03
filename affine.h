@@ -278,7 +278,7 @@ int apply_affinity(float *img,float *img_f,int w,int h,int w_f,int h_f,double *a
 	w=wh[0];
 	h=wh[1];
 
-    //compute maximal kept frequencies u_max and v_max
+    //compute maximal preserved frequencies u_max and v_max
 	double umax,vmax;
 	double A[2][2] = {a[0],a[1],a[3],a[4]};
     int test = umax_vmax(&umax,&vmax,A);  //in "umax_vmax.h"
