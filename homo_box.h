@@ -94,10 +94,10 @@ float convolve_img(float *img,double *Img,double xy,float d,int wh){
         xy2 = (double) xy + (3.*D-1.)/2.;
         xy3 = (double) xy + (D+1.)/2.;
         xy4 = (double) xy + (D-1.)/2.;
-        xy5 = (double) xy + (1.-D)/2.;
-        xy6 = (double) xy - (1.+D)/2.;
-        xy7 = (double) xy + (1.-3.*D)/2.;
-        xy8 = (double) xy - (1.+3.*D)/2.;
+        xy5 = (double) xy + (-D+1.)/2.;
+        xy6 = (double) xy + (-D-1.)/2.;
+        xy7 = (double) xy + (-3.*D+1.)/2.;
+        xy8 = (double) xy + (-3.*D-1.)/2.;
 
         // a. = valeur de l'image 4-int en .
         // b. = valeur de la derivé discrète de l'image 4-int
@@ -165,7 +165,7 @@ int apply_homo(float *img,float *img_f,int w,int h,int w_f,int h_f,int mu,int nu
   *
   * Img (with uppercase) represent an integral image, while img is an image
   */
-	int l;
+    int l;
 
     //w_aux,h_aux, mu_aux,nu_aux pour l'image intermÈdiaire img_aux
     //mu_aux,nu_aux,w_aux,h_aux are the position and size of the auxiliary image
@@ -175,23 +175,23 @@ int apply_homo(float *img,float *img_f,int w,int h,int w_f,int h_f,int mu,int nu
     int nu_aux = nu; //the first step does not change y
 
     float *imgw = malloc(w*sizeof(float));
-	double *Img = malloc(4*(w+1)*sizeof(double));
-	float *img_aux = malloc(w_aux*h_aux*sizeof(float));
-
-	float *img_auxh = malloc(h_aux*sizeof(float));
+    double *Img = malloc(4*(w+1)*sizeof(double));
+    float *img_aux = malloc(w_aux*h_aux*sizeof(float));
+	
+    float *img_auxh = malloc(h_aux*sizeof(float));
     double *Img_aux = malloc(4*(h_aux+1)*sizeof(double));
     float *img_aux2 = malloc(w_f*h_f*sizeof(float));
 
 	for(l=0;l<3;l++){
         //first step
-		for(int j=0;j<h_aux;j++){
+	    for(int j=0;j<h_aux;j++){
             for(int i=0;i<w;i++){imgw[i] = img[3*(i+j*w)+l];} //extract the column
             build_fourth_int(imgw,Img,w);
 
 			#pragma parallel for
 			for(int i=0;i<w_aux;i++){
-				float x = (float) (i+mu_aux+1/2);
-                float d = fabs((H[0]*H[8]-H[6]*H[2])/pow(H[6]*x+H[8],2)); //derivative with respect to x
+				float x = (float) (i+mu_aux) + 0.5;
+                		float d = fabs((H[0]*H[8]-H[6]*H[2])/pow(H[6]*x+H[8],2)); //derivative with respect to x
 
 				x = (H[0]*x+H[2])/(H[6]*x+H[8]) - (float) mu; //apply the homography
 				img_aux[i+j*w_aux] = convolve_img(imgw,Img,x,d,w);
@@ -202,18 +202,17 @@ int apply_homo(float *img,float *img_f,int w,int h,int w_f,int h_f,int mu,int nu
 
 		//second step
 		for(int i=0;i<w_f;i++){
-            for(int j=0;j<h_aux;j++){img_auxh[j] = img_aux[i+j*w_aux];} //extract the line
-            build_fourth_int(img_auxh,Img_aux,h_aux);
+		        for(int j=0;j<h_aux;j++){img_auxh[j] = img_aux[i+j*w_aux];} //extract the line
+		        build_fourth_int(img_auxh,Img_aux,h_aux);
 
-			float x =(float) (i+mu_f+1/2);
+			float x =(float) (i+mu_f) + 0.5;
 			float d = fabs(H[4]/(H[6]*x+H[8])); //derivative with respect to y (does not depend on y)
 
 			#pragma parallel for
 			for(int j=0;j<h_f;j++){
-				float y = (float) (j+nu_f+1/2);
+				float y = (float) (j+nu_f) + 0.5;
 				y = (H[4]*y+H[5])/(H[6]*x+H[8]) - (float) nu_aux; //apply the homography
 				img_aux2[i+j*w_f] = convolve_img(img_auxh,Img_aux,y,d,h_aux);
-
 			}
 		}
 
