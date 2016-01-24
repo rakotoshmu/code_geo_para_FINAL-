@@ -146,7 +146,7 @@ static int insideP(struct FTR *f, int x, int y)
 // SECTION 2. Linear algebra                                                {{{1
 
 // y = H(x)
-static void apply_homography(double y[2], double H[3][3], double x[2])
+static void apply_homography_1pt(double y[2], double H[3][3], double x[2])
 {
 	double X = H[0][0] * x[0] + H[0][1] * x[1] + H[0][2];
 	double Y = H[1][0] * x[0] + H[1][1] * x[1] + H[1][2];
@@ -290,7 +290,7 @@ static void map_window_to_image(struct viewer_state *e, double *y, double *x)
 {
 	double H[3][3], C[4][2];
 	obtain_current_homography(H, e);
-	apply_homography(y, H, x);
+	apply_homography_1pt(y, H, x);
 }
 
 // Convert a floating-point color into a byte in the range [0,255]
@@ -487,16 +487,6 @@ static void draw_warped_image(struct FTR *f)
 
 	double         H[3][3];   obtain_current_homography(H, e);
 	
-/*	H[0][0]=0.107933;
-H[0][1]=0.000899;
-H[0][2]=-3.784855;
-H[1][0]=-0.747116;
-H[1][1]=0.778536;
-H[1][2]=19.920756;
-H[2][0]=-0.000941;
-H[2][1]=-0.000131;
-H[2][2]=1.;*/
-	
 
 	float *img = malloc(3*(f->w)*(f->h)*sizeof(float));
 	float *img_f = malloc(3*(f->w)*(f->h)*sizeof(float));
@@ -508,7 +498,7 @@ if(e->interpolation_order == 0){
 	for (int j = 0; j < f->h; j++){
 	for (int i = 0; i < f->w; i++){
 			double p[2] = {i, j};
-			apply_homography(p, H, p);
+			apply_homography_1pt(p, H, p);
 			p[0] = (p[0] - 0.5) * w / (w - 1.0);
 			p[1] = (p[1] - 0.5) * h / (h - 1.0);
 			for (int l = 0; l < 3; l++){
@@ -526,7 +516,7 @@ if(e->interpolation_order==1){
 	debutcpu = clock();
 	debutreal = omp_get_wtime();
 	if(e->pd==3){
-        apply_homo_final(e->img,img_f,w,h,f->w,f->h,H);
+        apply_homography(e->img,img_f,w,h,f->w,f->h,H);
 	}else{//suppose pd=1
         float *img3 = malloc(3*w*h*sizeof(float));
         for(int i=0;i<w*h;i++){
@@ -534,7 +524,7 @@ if(e->interpolation_order==1){
                 img3[3*i+l]=e->img[i];
             }
         }
-        apply_homo_final(img3,img_f,w,h,f->w,f->h,H);
+        apply_homography(img3,img_f,w,h,f->w,f->h,H);
 	}
 	for(int i=0;i<3*(f->w)*(f->h);i++){(f->rgb)[i]=float_to_byte(img_f[i]);}
 	fincpu = clock();
@@ -629,7 +619,7 @@ static void draw_grid_points(struct FTR *f)
 	for (int i = 0; i < e->iw; i++)
 	{
 		double p[2] = {i, j};
-		apply_homography(p, H, p);
+		apply_homography_1pt(p, H, p);
 		int ip[2] = {p[0], p[1]};
 		if (insideP(f, ip[0], ip[1]))
 		for (int l = 0; l < 3; l++)
