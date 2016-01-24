@@ -59,6 +59,8 @@
 
 // user interface library
 #include "ftr.h"
+#include "ftr.c"
+#include "iio.c"
 
 
 // radius of the disks that are displayed around control points
@@ -399,22 +401,6 @@ static float bilinear_interpolation_at(float *x, int w, int h, int pd,
 	return evaluate_bilinear_cell(a, b, c, d, p-ip, q-iq);
 }
 
-// auxiliary code for "linear" interpolation
-#include "marchi.c"
-
-// instance of "interpolator_t", for linear (marching) interpolation
-static float linear_interpolation_at(float *x, int w, int h, int pd,
-		float p, float q, int l, extrapolator_t pix)
-{
-	int ip = floor(p);
-	int iq = floor(q);
-	float a = pix(x, w, h, pd, ip  , iq  , l);
-	float b = pix(x, w, h, pd, ip+1, iq  , l);
-	float c = pix(x, w, h, pd, ip  , iq+1, l);
-	float d = pix(x, w, h, pd, ip+1, iq+1, l);
-	return marchi(a, c, b, d, p-ip, q-iq);
-}
-
 // instance of "interpolator_t" for nearest neighbor interpolation
 static float nearest_neighbor_at(float *x, int w, int h, int pd,
 		float p, float q, int l, extrapolator_t pix)
@@ -464,7 +450,7 @@ static float bicubic_interpolation_at(float *img, int w, int h, int pd,
 static interpolator_t obtain_interpolator(struct viewer_state *e)
 {
 	if (e->dragging_point || e->dragging_ipoint) return nearest_neighbor_at;
-	if (e->interpolation_order == 1) return linear_interpolation_at;
+//	if (e->interpolation_order == 1) return linear_interpolation_at;
 	if (e->interpolation_order == 2) return bilinear_interpolation_at;
 	if (e->interpolation_order == 3) return bicubic_interpolation_at;
 	return nearest_neighbor_at;
