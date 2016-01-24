@@ -44,7 +44,7 @@ int main(int argc,char *argv[]){
 	debutcpu = clock();
 	debutreal = omp_get_wtime();
 	if(pd==3){
-        apply_homo_final(img,img_f,w,h,WOUT,HOUT,H);
+        apply_homography(img,img_f,w,h,WOUT,HOUT,H);
 	}else{//suppose pd=1
         float *img3 = malloc(3*w*h*sizeof(float));
         for(int i=0;i<w*h;i++){
@@ -52,7 +52,7 @@ int main(int argc,char *argv[]){
                 img3[3*i+l]=img[i];
             }
         }
-        apply_homo_final(img3,img_f,w,h,WOUT,HOUT,H);
+        apply_homography(img3,img_f,w,h,WOUT,HOUT,H);
 	}
 	
 	fincpu = clock();
