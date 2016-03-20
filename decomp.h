@@ -1,21 +1,28 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <math.h>
-#include "affine.h"
-#include "homo_box.h"
 #include <omp.h>
 
-//Pour les homographie
-// 0 1 2
-// 3 4 5
-// 6 7 8
-
-//Pour les affinité
-// 0 1 2
-// 3 4 5
+#include "affine.h"
+#include "homo_box.h"
 
 
-static void apply_homography(double y[2], double H[3][3], double x[2])
+/**
+  * how are indexed coefficients of matrices :
+  *
+  * for the homographies
+  * 0,0   0,1   0,2
+  * 1,0   1,1   1,2
+  * 2,0   2,1   2,2
+  *
+  * for the affine maps
+  * 0,0   0,1   0,2
+  * 1,0   1,1   1,2
+  */
+
+
+
+static void apply_homography_1pt_aux(double y[2], double H[3][3], double x[2])
 {
 	double X = H[0][0] * x[0] + H[0][1] * x[1] + H[0][2];
 	double Y = H[1][0] * x[0] + H[1][1] * x[1] + H[1][2];
@@ -26,18 +33,66 @@ static void apply_homography(double y[2], double H[3][3], double x[2])
 
 
 
-void decomp(double H[9],double A[6],double H0[9],double B[6]){
+// compute the smallest rectangle containing the result of an affine mapping
+void smallest_rectangle(double A[2][3], int wIn, int hIn, int *muOut, int *nuOut, int *wOut, int *hOut){
 /**
   * @param
-  *     H,A,H0,B : H = A H0 B
+  *     A an affine map
+  *     [0,wIn]*[0,hIn] a rectangle of the plan
+  *     [muOut,muOut+wOut]*[nuOut,nuOut+hOut] an output rectangle
+  *
+  * @return
+  *     [muOut,muOut+wOut]*[nuOut,nuOut+hOut] is the smallest rectangle (with integer-coordinated vertices) containing A([0,wIn]*[0,hIn])
+  *     (rectangle starting at (muOut,nuOut) with dimensions wOut*hOut)
   */
-    double a=H[0], b=H[1], p=H[2], c=H[3], d=H[4], q=H[5], r=H[6], s=H[7], t=H[8];
+    //vertices of the rectangle [0,wIn]*[0,hIn]
+    double xIn[4] = {0,wIn,wIn,0};
+    double yIn[4] = {0,0,hIn,hIn};
+    //vertices of the parallelogram A([0,wIn]*[0,hIn])
+    double xOut[4];
+    double yOut[4];
+    for(int k=0;k<4;k++){
+        xOut[k]=xIn[k]*A[0][0]+yIn[k]*A[0][1]+A[0][2];
+        yOut[k]=xIn[k]*A[1][0]+yIn[k]*A[1][1]+A[1][2];
+    }
+
+    //extrema of the coordinates of the output rectangle's vertices
+    double xOutMin_double = xOut[0];
+    double yOutMin_double = yOut[0];
+    double xOutMax_double = xOut[0];
+    double yOutMax_double = yOut[0];
+    for(int k=1;k<4;k++){
+        xOutMin_double = fmin(xOutMin_double,xOut[k]);
+        yOutMin_double = fmin(yOutMin_double,yOut[k]);
+        xOutMax_double = fmax(xOutMax_double,xOut[k]);
+        yOutMax_double = fmax(yOutMax_double,yOut[k]);
+    }
+    int xOutMin = floor(xOutMin_double);
+    int yOutMin = floor(yOutMin_double);
+    int xOutMax = ceil(xOutMax_double);
+    int yOutMax = ceil(yOutMax_double);
+
+    //output
+    *muOut = xOutMin;
+    *nuOut = yOutMin;
+    *wOut = xOutMax - xOutMin;
+    *hOut = yOutMax - yOutMin;
+}
+
+
+// decompose H in H = A H0 B
+void decomp(double H[3][3],double A[2][3],double H0[3][3],double B[2][3]){
+/**
+  * @param
+  *     H an input homography
+  *		H0 an output homography
+  *		A,B output affinities
+  */
+    double a=H[0][0], b=H[0][1], p=H[0][2], c=H[1][0], d=H[1][1], q=H[1][2], r=H[2][0], s=H[2][1], t=H[2][2];
     double t0, t1;
-	//on suppose r,s != 0,0
+	//assume r,s != 0,0
 
-
-
-    //il existe une infinité de couples (t0,t1) viables. On en choisit un simple
+    //an infinity of (t0,t1) are possible. Here is a simple one
     if(fabs(a*s-b*r)<fabs(c*s-d*r)){
         t0 = 0.;
         t1 = -((a*s-b*r)*(a*r+b*s)+(c*s-d*r)*(c*r+d*s))/(pow(r,2.)+pow(s,2.))/(c*s-d*r);
@@ -48,7 +103,7 @@ void decomp(double H[9],double A[6],double H0[9],double B[6]){
 
 
 
-    //on change les notations : on translate les coefficients (H devient T_(t0,t1)*H)
+    //translation of (t0,t1) (H becomes T_(t0,t1)*H)
     a += t0*r;
     b += t0*s;
     p += t0*t;
@@ -58,203 +113,137 @@ void decomp(double H[9],double A[6],double H0[9],double B[6]){
 
 
 
-    double Nphi = sqrt(pow(r,2.)+pow(s,2.));
-    B[0] = r/Nphi;
-	B[1] = s/Nphi;
-	B[2] = 0.;
-	B[3] = -s/Nphi;
-	B[4] = r/Nphi;
-	B[5] = 0.;
+    double N_phi = sqrt(pow(r,2.)+pow(s,2.));
+    B[0][0] = r/N_phi;
+	B[0][1] = s/N_phi;
+	B[0][2] = 0.;
+	B[1][0] = -s/N_phi;
+	B[1][1] = r/N_phi;
+	B[1][2] = 0.;
 
-    double Npsi = sqrt(pow(a*s-b*r,2.)+pow(c*s-d*r,2.));
-	A[0] = (c*s-d*r)/Npsi;
-	A[1] = (a*s-b*r)/Npsi;
-	A[2] = -t0;
-	A[3] = -(a*s-b*r)/Npsi;
-	A[4] = (c*s-d*r)/Npsi;
-	A[5] = -t1;
+    double N_psi = sqrt(pow(a*s-b*r,2.)+pow(c*s-d*r,2.));
+	A[0][0] = (c*s-d*r)/N_psi;
+	A[0][1] = (a*s-b*r)/N_psi;
+	A[0][2] = -t0;
+	A[1][0] = -(a*s-b*r)/N_psi;
+	A[1][1] = (c*s-d*r)/N_psi;
+	A[1][2] = -t1;
 
-    H0[0] = -(a*d-b*c)*Nphi/Npsi;
-    H0[1] = 0.;
-    H0[2] = (p*(c*s-d*r)-q*(a*s-b*r))/Npsi;
-    H0[3] = 0.;
-    H0[4] = -Npsi/Nphi;
-    H0[5] = (p*(a*s-b*r)+q*(c*s-d*r))/Npsi;
-    H0[6] = Nphi;
-    H0[7] = 0.;
-    H0[8] = t;
+    H0[0][0] = -(a*d-b*c)*N_phi/N_psi;
+    H0[0][1] = 0.;
+    H0[0][2] = (p*(c*s-d*r)-q*(a*s-b*r))/N_psi;
+    H0[1][0] = 0.;
+    H0[1][1] = -N_psi/N_phi;
+    H0[1][2] = (p*(a*s-b*r)+q*(c*s-d*r))/N_psi;
+    H0[2][0] = N_phi;
+    H0[2][1] = 0.;
+    H0[2][2] = t;
 
 }
 
-void apply_homo_final(float *img,float *img_f,int w,int h,int w_f,int h_f,double H[3][3]){
+
+void apply_homography(float *img,float *img_f,int w,int h,int w_f,int h_f,double H[3][3]){
 
 /**
   * @param
-  *     img : image d'entrée
-  *     img_f : image de sortie
-  *     w,h : dimension de l'image d'entrée
-  *     H : matrice de l'homographie img_f(x,y)=img(H(x,y))
+  *     img : input image
+  *     img_f : output image
+  *     w,h : width and heights of the input image
+  *		w_f,h_f : width and heights of the output image
+  *     H : inverse homography, such that img_f(x,y)=img(H(x,y))
   */
 
+	if(H[2][2]!=0 && H[2][0]/H[2][2]==0 && H[2][1]/H[2][2]==0){    //H is an affine map
+		double A[2][3] = {
+			H[0][0]/H[2][2], H[0][1]/H[2][2], H[0][2]/H[2][2],
+			H[1][0]/H[2][2], H[1][1]/H[2][2], H[1][2]/H[2][2]};
+		apply_affine_map(img,img_f,w,h,w_f,h_f,A);
+	}else{  //H is an homography
+		double A[2][3];
+		double H0[3][3];
+		double B[2][3];
 
-	double *a = *H;
-
-	if(a[6]==0 && a[7]==0){ //cas d'une affinité
-        for(int i=0;i<8;i++){a[i]=a[i]/a[8];}
-        a[8]=1.;
-		double A[6];
-		for(int i=0;i<6;i++){A[i]=a[i];}
-		apply_affinite(img,img_f,w,h,w_f,h_f,A);
-	}
-	else{
-		double A[6];
-		double H0[9];
-		double B[6];
-
-		decomp(a,A,H0,B);
+		decomp(H,A,H0,B);   //compute the decomposition H = A H0 B
 
 
 
-	double x4[4] = {0,w_f,w_f,0};
-        double y4[4] = {0,0,h_f,h_f};
-        //x1,y1 = H(x4,y4)
-        double x1[4];
-        double y1[4];
+		//declare the size (w,h) and the position (mu,nu) of every intermediate image
+		/*
+		 * For an image at the position (mu,nu), the coordinates of the (i,j)-th pixel are (i+mu,j+nu)
+		 * rectangleX is the rectangle of the plan [muX,muX+wX]*[nuX,nuX+hX] containing imgX
+		 * Thus, rectangle1 is the input image and rectangle_f is the output image
+		 *
+		 *
+		 * img1 is the input image (mu1=nu1=0, w1=w, h1=h)
+		 * img2 and img3 are the intermediate images
+		 * img4 is the output image (mu4=nu4=0, w4=w_f, h4=h_f)
+		 */
+		int mu2,nu2,w2,h2,
+			mu3,nu3,w3,h3;
 
-        int w1=w;
-        int h1=h;
-        int mu1=0;
-        int nu1=0;
+		//rectangle2 = invA(rectangle1) where invA = A^(-1)
+		double detA = A[0][0]*A[1][1]-A[1][0]*A[0][1];
+		double invA[2][3] = {
+			A[1][1]/detA,
+			-A[0][1]/detA,
+			(A[0][1]*A[1][2]-A[1][1]*A[0][2])/detA,
+			-A[1][0]/detA,
+			A[0][0]/detA,
+			(-A[0][0]*A[1][2]+A[1][0]*A[0][2])/detA};
+		smallest_rectangle(invA,w,h,&mu2,&nu2,&w2,&h2);
+		if((w2-w)%2!=0){w2++;}  //w2 must have the same parity than w
+		if((h2-h)%2!=0){h2++;}  //h2 must have the same parity than h
 
-		x1[0]=0; x1[1]=w; x1[2]=w; x1[3]=0;
-		y1[0]=0; y1[1]=0; y1[2]=h; y1[3]=h;
-
-
-
-		//x2,y2 = AA(x1,y1) où AA = A^(-1)
-		double det_A = A[0]*A[4]-A[3]*A[1];
-        double AA[6] = {
-            A[4]/det_A,
-            -A[1]/det_A,
-            (A[1]*A[5]-A[4]*A[2])/det_A,
-            -A[3]/det_A,
-            A[0]/det_A,
-            (-A[0]*A[5]+A[3]*A[2])/det_A
-        };
-
-        double x2[4];
-        double y2[4];
-        for(int k=0;k<4;k++){
-            x2[k]=x1[k]*AA[0]+y1[k]*AA[1]+AA[2];
-            y2[k]=x1[k]*AA[3]+y1[k]*AA[4]+AA[5];
-        }
-        double temp_min_x2 = x2[0];
-        double temp_min_y2 = y2[0];
-        double temp_max_x2 = x2[0];
-        double temp_max_y2 = y2[0];
-        for(int k=1;k<4;k++){
-            if(x2[k]<temp_min_x2){temp_min_x2 = x2[k];}
-            if(y2[k]<temp_min_y2){temp_min_y2 = y2[k];}
-            if(x2[k]>temp_max_x2){temp_max_x2 = x2[k];}
-            if(y2[k]>temp_max_y2){temp_max_y2 = y2[k];}
-        }
-
-        int min_x2 = floor(temp_min_x2);
-        int min_y2 = floor(temp_min_y2);
-        int max_x2 = ceil(temp_max_x2);
-        int max_y2 = ceil(temp_max_y2);
-        int w2 = max_x2-min_x2, h2 = max_y2-min_y2, mu2 = min_x2, nu2 = min_y2;
-
-        //augmenter w2, h2 pour avoir même parité que w1, h1
-        if((w2-w1)%2!=0){w2++;}
-        if((h2-h1)%2!=0){h2++;}
-
-
-        //x3,y3 = B(x4,y4)
-        double x3[4];
-        double y3[4];
-        for(int k=0;k<4;k++){
-            x3[k]=x4[k]*B[0]+y4[k]*B[1]+B[2];
-            y3[k]=x4[k]*B[3]+y4[k]*B[4]+B[5];
-        }
-        double temp_min_x3 = x3[0];
-        double temp_min_y3 = y3[0];
-        double temp_max_x3 = x3[0];
-        double temp_max_y3 = y3[0];
-        for(int k=1;k<4;k++){
-            if(x3[k]<temp_min_x3){temp_min_x3 = x3[k];}
-            if(y3[k]<temp_min_y3){temp_min_y3 = y3[k];}
-            if(x3[k]>temp_max_x3){temp_max_x3 = x3[k];}
-            if(y3[k]>temp_max_y3){temp_max_y3 = y3[k];}
-        }
-        int min_x3 = floor(temp_min_x3);
-        int min_y3 = floor(temp_min_y3);
-        int max_x3 = ceil(temp_max_x3);
-        int max_y3 = ceil(temp_max_y3);
-        int w3 = max_x3-min_x3, h3 = max_y3-min_y3, mu3 = min_x3, nu3 = min_y3;
- 
-        //augmenter w3, h3 pour avoir même parité que w_f, h_f
-        if((w3-w_f)%2!=0){w3++;}
-        if((h3-h_f)%2!=0){h3++;}
+		//rectangle3 = B(rectangle4)
+		smallest_rectangle(B,w_f,h_f,&mu3,&nu3,&w3,&h3);
+		if((w3-w_f)%2!=0){w3++;}    //w3 must have the same parity than w_f
+		if((h3-h_f)%2!=0){h3++;}    //h3 must have the same parity than h_f
 
 
 
-        int w4 = w_f, h4 = h_f;
-        int mu4 = 0, nu4 = 0;
+		//the affinities must be corrected so that they fit the positions of the rectangles
+		/*
+		 * the exact formulas are
+		 * A[0][2] = mu2*A[0][0] + nu2*A[0][1] + A[0][2] - mu1;
+		 * A[1][2] = mu2*A[1][0] + nu2*A[1][1] + A[1][2] - nu1;
+		 * B[0][2] = mu4*B[0][0] + nu4*B[0][1] + B[0][2] - mu3;
+		 * B[1][2] = mu4*B[1][0] + nu4*B[1][1] + B[1][2] - nu3;
+		 * but a lot of term are zero
+		 */
+		A[0][2] = mu2*A[0][0] + nu2*A[0][1] + A[0][2];
+		A[1][2] = mu2*A[1][0] + nu2*A[1][1] + A[1][2];
+		B[0][2] = - mu3;
+		B[1][2] = - nu3;
 
 
-        //à ce stade, on a pris en compte une grande partie des translations de A et , via les mu,nu
-        //on modifie donc A et B en conséquence
 
-        A[2] = mu2*A[0] + nu2*A[1] + A[2] - mu1;
-        A[5] = mu2*A[3] + nu2*A[4] + A[5] - nu1;
-        B[2] = mu4*B[0] + nu4*B[1] + B[2] - mu3;
-        B[5] = mu4*B[3] + nu4*B[4] + B[5] - nu3;
+		///Application of the decomposition
 
-
-
-        ///** code original (application de la décomposition)
-        float *img1 = malloc(3*w1*h1*sizeof(float));
-		for(int i=0;i<3*w1*h1;i++){img1[i]=img[i];}
-
-        float *img2 = malloc(3*w2*h2*sizeof(float));
-		apply_affinite(img1,img2,w1,h1,w2,h2,A);
-		free(img1);
+		float *img2 = malloc(3*w2*h2*sizeof(float));
+		apply_affine_map(img,img2,w,h,w2,h2,A);
 
 		float *img3 = malloc(3*w3*h3*sizeof(float));
-		apply_homo(img2,img3,w2,h2,w3,h3,mu2,nu2,mu3,nu3,H0);
+		apply_unidirectional_homography(img2,img3,w2,h2,w3,h3,mu2,nu2,mu3,nu3,H0);
 		free(img2);
 
-		float *img4 = malloc(3*w_f*h_f*sizeof(float));
-		apply_affinite(img3,img4,w3,h3,w4,h4,B);
+		apply_affine_map(img3,img_f,w3,h3,w_f,h_f,B);
 		free(img3);
-
-        for(int i=0;i<w_f;i++)
-            for(int j=0;j<h_f;j++)
-                for(int l=0;l<3;l++)
-                    {img_f[(i+w_f*j)*3+l]=img4[(i+w4*j)*3+l];}
-        free(img4);
-        //*/
 	}
-	
-	
+
+
 	double p[2];
-	
+
+	//truncate the output image, because it has been symmetrized to prevent ringing
 	for(int i=0;i<w_f;i++){
 		for(int j=0;j<h_f;j++){
 			p[0]=i; p[1]=j;
-			apply_homography(p,H,p);
-			p[0] = (p[0] - 0.5) * w / (w - 1.0);
-			p[1] = (p[1] - 0.5) * h / (h - 1.0);
-			if(p[0]<0 || p[0]>w || p[1]<0 || p[1]>h ){
+			apply_homography_1pt_aux(p,H,p);
+			//p[0] = (p[0] - 0.5) * w / (w - 1.0);
+			//p[1] = (p[1] - 0.5) * h / (h - 1.0);
+			if(p[0]<0 || p[0]>w || p[1]<0 || p[1]>h){
 				for(int l=0;l<3;l++){img_f[(j*w_f+i)*3+l]=0;}
 			}
 		}
 	}
-	
+
 }
-
-
-
-
-
